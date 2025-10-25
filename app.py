@@ -88,7 +88,7 @@ def chunk_text(s: str, max_chars: int = 2400) -> list[str]:
     return [s[i:i + max_chars] for i in range(0, len(s), max_chars)] or [""]
 
 
-def hf_generate(model_id: string, token: str, prompt: str, max_retries: int = 3):
+def hf_generate(model_id: str, token: str, prompt: str, max_retries: int = 3):
     """
     Call Hugging Face Inference API with retries for 503/429 and normalize common response shapes.
     Returns: (text, error) where only one is non-empty.
