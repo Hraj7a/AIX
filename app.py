@@ -139,13 +139,16 @@ I want you to analyze it and produce the following:
 Text from legal document: {text}"""
 
     payload = {"inputs": prompt, "parameters": {"max_new_tokens": 1024}}
-    try:
-        return requests.post(api_url, headers=headers, json=payload, timeout=120)
-    except Exception as e:
-        class DummyErr:
-            status_code = 500
-            def json(self): return {"error": str(e)}
-        return DummyErr()
+try:
+    resp = requests.post(api_url, headers=headers, json=payload, timeout=120)
+    print("HF STATUS", resp.status_code, "BODY", resp.text[:500])  # Debug log
+    return resp
+except Exception as e:
+    class DummyErr:
+        status_code = 500
+        def json(self): return {"error": str(e)}
+    return DummyErr()
+
 
 # -------------------------------
 # 🎨 UI / App
