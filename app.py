@@ -44,7 +44,7 @@ if AZURE_TRANSLATOR_KEY and AZURE_TRANSLATOR_ENDPOINT:
 # -------------------------------
 # 🛠️ Helper functions
 # -------------------------------
-def get_chatgpt_response(text, country: str = "", model: str = "gpt-3.5-turbo"):
+def get_chatgpt_response(text, country: str = "", model: str = "gpt-4o-mini"):
     """Get analysis from ChatGPT."""
     try:
         if country:
