@@ -16,7 +16,7 @@ AZURE_TRANSLATOR_KEY = st.secrets.get("AZURE_TRANSLATOR_KEY", "")
 AZURE_TRANSLATOR_ENDPOINT = st.secrets.get("AZURE_TRANSLATOR_ENDPOINT", "")
 AZURE_TRANSLATOR_REGION = st.secrets.get("AZURE_TRANSLATOR_REGION", "qatarcentral")
 
-HF_MODEL_ID = st.secrets.get("HF_MODEL_ID", "mrm8488/T5-base-finetuned-cuad")
+HF_MODEL_ID = st.secrets.get("HF_MODEL_ID", "meta-llama/Llama-3.2-3B-Instruct")
 HF_TOKEN = st.secrets.get("HF_TOKEN", "")
 
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", "")
@@ -108,9 +108,8 @@ def extract_text_from_file(file):
         return raw, max(1, len(raw.splitlines()) // 40 + 1)
 
 def query_huggingface(model_id: str, token: str, text: str, country: str = ""):
-    """Send text to the Hugging Face inference API (optional)."""
+    """Send text to the Hugging Face inference API using instruction-based analysis."""
     if not token:
-        # If no token provided, return a dummy-like response
         class DummyResp:
             status_code = 401
             def json(self): return {"error": "Missing HF_TOKEN"}
@@ -119,37 +118,40 @@ def query_huggingface(model_id: str, token: str, text: str, country: str = ""):
     headers = {"Authorization": f"Bearer {token}"}
     api_url = f"https://api-inference.huggingface.co/models/{model_id}"
 
+    # Build prompt for instruction-tuned Llama model
+    short_text = text[:4000]
     if country:
-        prompt = f"""Based on the following text that is taken from a contract document, and based on the laws of {country},
-I want you to analyze it and produce the following:
-1 - Extracted contract information (eg. contracting parties, effective dates, governing laws, financial terms, etc),
-2 - Give me details on the missing information from the document if there is any,
-3 - Analysis of potential risks, such as non-standard clauses,
-4 - Give me legal advice on what to change in the document, opinions, or law comparisons,
-5 - Summarized overview of extracted information, missing items, and potential risks.
-Text from legal document: {text}"""
+        prompt = (
+            f"You are a legal contract analyst specializing in {country} law.\n"
+            f"Analyze the following contract and provide:\n"
+            f"1. Extracted key details (parties, effective dates, governing law, financial terms).\n"
+            f"2. Missing information or irregular clauses.\n"
+            f"3. Potential legal or financial risks.\n"
+            f"4. Recommendations or advice for compliance.\n\n"
+            f"Contract text:\n{short_text}"
+        )
     else:
-        prompt = f"""Based on the following text that is taken from a contract document,
-I want you to analyze it and produce the following:
-1 - Extracted contract information (eg. contracting parties, effective dates, governing laws, financial terms, etc),
-2 - Give me details on the missing information from the document if there is any,
-3 - Analysis of potential risks, such as non-standard clauses,
-4 - Give me legal advice on what to change in the document, opinions, or law comparisons,
-5 - Summarized overview of extracted information, missing items, and potential risks.
-Text from legal document: {text}"""
+        prompt = (
+            "You are a legal contract analyst.\n"
+            "Analyze the following contract and provide:\n"
+            "1. Extracted key details (parties, effective dates, governing law, financial terms).\n"
+            "2. Missing information or irregular clauses.\n"
+            "3. Potential legal or financial risks.\n"
+            "4. Recommendations or advice for compliance.\n\n"
+            f"Contract text:\n{short_text}"
+        )
 
     payload = {"inputs": prompt, "parameters": {"max_new_tokens": 1024}}
+
     try:
-        resp = requests.post(api_url, headers=headers, json=payload, timeout=120)
+        resp = requests.post(api_url, headers=headers, json=payload, timeout=180)
         print("HF STATUS", resp.status_code, "BODY", resp.text[:500])  # Debug log
         return resp
-
     except Exception as e:
         class DummyErr:
             status_code = 500
             def json(self): return {"error": str(e)}
         return DummyErr()
-
 
 # -------------------------------
 # 🎨 UI / App
