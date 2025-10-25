@@ -153,7 +153,7 @@ Text from legal document: {text}"""
 def main():
     st.set_page_config(
         page_title="Contract Analysis",
-        page_icon="📄",
+        page_icon="logo.png",
         layout="wide",
         initial_sidebar_state="expanded"
     )
