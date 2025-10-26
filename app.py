@@ -45,7 +45,7 @@ if 'hf_result' not in st.session_state:
     st.session_state.hf_result = None
 
 # ------------------------------------------------------------
-# 🛠️ HELPER FUNCTIONS
+# 🛠 HELPER FUNCTIONS
 # ------------------------------------------------------------
 
 def get_chatgpt_response(text, country="", model="gpt-3.5-turbo", hf_analysis=None):
@@ -337,14 +337,12 @@ def main():
             # Step 3: Process with GPT using HF insights
             with st.spinner("Performing comprehensive analysis..."):
                 if st.session_state.hf_result:
-        # ✅ Use only Hugging Face analysis (no GPT)
+                    # ✅ Use only Hugging Face analysis (no GPT)
                     st.session_state.analysis_result = st.session_state.hf_result
-                    st.session_state.messages.append({"role": "assistant", "content": st.session_state.hf_result})
                 else:
-        # ⚙️ Fallback to GPT if HF failed
+                    # ⚙ Fallback to GPT if HF failed
                     response = get_chatgpt_response(text, country)
                     st.session_state.analysis_result = response
-                    st.session_state.messages.append({"role": "assistant", "content": response})
 
 
             st.markdown("###Analysis Results")
@@ -400,10 +398,7 @@ def main():
     # Store assistant message
         st.session_state.messages.append({"role": "assistant", "content": response})
 
-# Display messages dynamically after user sends
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.write(message["content"])
+    # (No duplicate rendering here.) Messages are displayed above in the chat column.
 
 
 if __name__ == "__main__":
