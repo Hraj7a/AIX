@@ -8,8 +8,7 @@ from azure.ai.translation.text import TextTranslationClient
 from azure.core.credentials import AzureKeyCredential
 from openai import OpenAI
 import io
-from translationItems import classify_text
-from apifirst import translate_text_with_model, translator_client
+
 
 # ------------------------------------------------------------
 # 🔑 CONFIGURATION
@@ -19,6 +18,11 @@ from apifirst import translate_text_with_model, translator_client
 AZURE_TRANSLATOR_KEY = os.getenv("AZURE_TRANSLATOR_KEY")
 AZURE_TRANSLATOR_ENDPOINT = os.getenv("AZURE_TRANSLATOR_ENDPOINT", "https://salahalali.cognitiveservices.azure.com/")
 AZURE_TRANSLATOR_REGION = os.getenv("AZURE_TRANSLATOR_REGION", "qatarcentral")
+
+translator_client = TextTranslationClient(
+    endpoint=AZURE_TRANSLATOR_ENDPOINT,
+    credential=AzureKeyCredential(AZURE_TRANSLATOR_KEY)
+)
 
 # HuggingFace
 HF_MODEL_ID = "google/flan-t5-large"
