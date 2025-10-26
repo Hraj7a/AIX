@@ -318,8 +318,8 @@ def main():
 
             # Step 2: Process with HuggingFace model
             with st.spinner("Performing initial legal analysis..."):
-                    hf_response = None  # initialize here
-                    st.session_state.hf_result = None  # default to None
+                hf_response = None  # initialize here
+                st.session_state.hf_result = None  # default to None
                 try:
                     hf_response = query_huggingface(HF_MODEL_ID, HF_TOKEN, text, country)
                     if hf_response is not None and hf_response.status_code == 200:
