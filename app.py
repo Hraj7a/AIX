@@ -320,7 +320,7 @@ def main():
             with st.spinner("Performing initial legal analysis..."):
                 try:
                     if hf_response is not None and hf_response.status_code == 200:
-                    data = hf_response.json()
+                        data = hf_response.json()
                         if isinstance(data, list) and "generated_text" in data[0]:
                             st.session_state.hf_result = data[0]["generated_text"]
                             st.success("✅ Legal analysis completed by fine-tuned model.")
