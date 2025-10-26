@@ -1,11 +1,5 @@
-# ============================================================
-# 📘 Contract Analyzer App — Original UI Preserved (FLAN-T5)
-# ============================================================
-
 import streamlit as st
-import io
-import json
-import time
+import os
 from docx import Document
 from pypdf import PdfReader
 from langdetect import detect
@@ -13,150 +7,197 @@ import requests
 from azure.ai.translation.text import TextTranslationClient
 from azure.core.credentials import AzureKeyCredential
 from openai import OpenAI
+import io
+from translationItems import classify_text
+from apifirst import translate_text_with_model, translator_client
 
-# -------------------------------
-# 🔐 Secrets (Streamlit Cloud)
-# -------------------------------
-AZURE_TRANSLATOR_KEY = st.secrets.get("AZURE_TRANSLATOR_KEY", "")
-AZURE_TRANSLATOR_ENDPOINT = st.secrets.get("AZURE_TRANSLATOR_ENDPOINT", "")
-AZURE_TRANSLATOR_REGION = st.secrets.get("AZURE_TRANSLATOR_REGION", "qatarcentral")
+# ------------------------------------------------------------
+# 🔑 CONFIGURATION
+# ------------------------------------------------------------
 
-# ✅ Use google/flan-t5-large by default
-HF_MODEL_ID = st.secrets.get("HF_MODEL_ID", "google/flan-t5-large")
-HF_TOKEN = st.secrets.get("HF_TOKEN", "")
+# Azure Translation
+AZURE_TRANSLATOR_KEY = os.getenv("AZURE_TRANSLATOR_KEY")
+AZURE_TRANSLATOR_ENDPOINT = os.getenv("AZURE_TRANSLATOR_ENDPOINT", "https://salahalali.cognitiveservices.azure.com/")
+AZURE_TRANSLATOR_REGION = os.getenv("AZURE_TRANSLATOR_REGION", "qatarcentral")
 
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", "")
+# HuggingFace
+HF_MODEL_ID = "mrm8488/T5-base-finetuned-cuad"
+HF_TOKEN = os.getenv("HF_TOKEN")
 
-# Stop early if the key you absolutely need is missing
-if not OPENAI_API_KEY:
-    st.error("Missing OPENAI_API_KEY in Streamlit Secrets.")
-    st.stop()
+# OpenAI
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# -------------------------------
-# 🧰 Initialize clients
-# -------------------------------
+# Initialize clients
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-translator_client = None
-if AZURE_TRANSLATOR_KEY and AZURE_TRANSLATOR_ENDPOINT:
-    try:
-        translator_client = TextTranslationClient(
-            endpoint=AZURE_TRANSLATOR_ENDPOINT,
-            credential=AzureKeyCredential(AZURE_TRANSLATOR_KEY)
-        )
-    except Exception as e:
-        st.warning(f"Azure Translator client init failed: {e}")
+# Initialize session state
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
+if 'analysis_result' not in st.session_state:
+    st.session_state.analysis_result = None
+if 'original_language' not in st.session_state:
+    st.session_state.original_language = None
+if 'hf_result' not in st.session_state:
+    st.session_state.hf_result = None
 
-# -------------------------------
-# 🛠️ Helper functions
-# -------------------------------
-def translate_text(text: str, to_language: str = "en"):
-    """Translate text using Azure if configured."""
-    if not translator_client:
-        return text
+# ------------------------------------------------------------
+# 🛠️ HELPER FUNCTIONS
+# ------------------------------------------------------------
+
+def get_chatgpt_response(text, country="", model="gpt-3.5-turbo", hf_analysis=None):
+    """Get analysis from ChatGPT with optional HuggingFace analysis integration."""
     try:
-        resp = translator_client.translate(
+        if hf_analysis:
+            # Enhanced prompt using HF analysis
+            if country:
+                prompt = f"""Based on the previous legal analysis and the contract text, and considering the laws of {country},
+                provide a comprehensive analysis incorporating the previous insights and add your analysis on:
+                1 - Extracted contract information (eg. contracting parties, effective dates, governing laws, financial terms, etc),
+                2 - Give me details on the missing information from the document if there is any,
+                3 - Analysis of potential risks, such as non-standard clauses,
+                4 - Give me legal advice on what to change in the document, opinions, or law comparisons,
+                5 - Summarized overview of extracted information, missing items, and potential risks.
+                
+                Previous Legal Analysis:
+                {hf_analysis}
+                
+                Contract Text:
+                {text}"""
+            else:
+                prompt = f"""Based on the previous legal analysis and the contract text, 
+                provide a comprehensive analysis incorporating the previous insights and add your analysis on:
+                1 - Extracted contract information (eg. contracting parties, effective dates, governing laws, financial terms, etc),
+                2 - Give me details on the missing information from the document if there is any,
+                3 - Analysis of potential risks, such as non-standard clauses,
+                4 - Give me legal advice on what to change in the document, opinions, or law comparisons,
+                5 - Summarized overview of extracted information, missing items, and potential risks.
+                
+                Previous Legal Analysis:
+                {hf_analysis}
+                
+                Contract Text:
+                {text}"""
+        else:
+            # Original prompt without HF analysis
+            if country:
+                prompt = f"""Based on the following text that is taken from a contract document, and based on the laws of {country},
+                I want you to analyze it and produce the following:
+                1 - Extracted contract information (eg. contracting parties, effective dates, governing laws, financial terms, etc),
+                2 - Give me details on the missing information from the document if there is any,
+                3 - Analysis of potential risks, such as non-standard clauses,
+                4 - Give me legal advice on what to change in the document, opinions, or law comparisons,
+                5 - Summarized overview of extracted information, missing items, and potential risks.
+                Text from legal document: {text}"""
+            else:
+                prompt = f"""Based on the following text that is taken from a contract document,
+                I want you to analyze it and produce the following:
+                1 - Extracted contract information (eg. contracting parties, effective dates, governing laws, financial terms, etc),
+                2 - Give me details on the missing information from the document if there is any,
+                3 - Analysis of potential risks, such as non-standard clauses,
+                4 - Give me legal advice on what to change in the document, opinions, or law comparisons,
+                5 - Summarized overview of extracted information, missing items, and potential risks.
+                Text from legal document: {text}"""
+
+        messages = [{"role": "user", "content": prompt}]
+        
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=2048,
+            n=1,
+            temperature=0.7,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Error getting ChatGPT response: {e}")
+        return "Error: Could not get response from ChatGPT"
+
+def translate_text(text, to_language="en"):
+    """Translate text to target language using Azure Translator."""
+    try:
+        response = translator_client.translate(
             body=[{"text": text}],
             to_language=[to_language]
         )
-        return resp[0].translations[0].text
+        return response[0].translations[0].text
     except Exception as e:
         st.error(f"Translation error: {e}")
         return text
 
-
 def extract_text_from_file(file):
-    """Extract text from DOCX, PDF, or TXT file. Returns (text, approx_pages)."""
-    if file.name.lower().endswith(".pdf"):
+    """Extract text from DOCX, PDF, or TXT file."""
+    if file.name.endswith(".pdf"):
         pdf = PdfReader(io.BytesIO(file.read()))
-        text = "\n".join([(page.extract_text() or "") for page in pdf.pages])
-        return text, len(pdf.pages)
-    elif file.name.lower().endswith(".docx"):
+        return "\n".join([page.extract_text() or "" for page in pdf.pages]), len(pdf.pages)
+    elif file.name.endswith(".docx"):
         doc = Document(io.BytesIO(file.read()))
-        text = "\n".join([para.text for para in doc.paragraphs])
-        approx_pages = max(1, len(doc.paragraphs) // 20 + (1 if len(doc.paragraphs) % 20 else 0))
-        return text, approx_pages
+        return "\n".join([para.text for para in doc.paragraphs]), len(doc.paragraphs) // 20 + 1
     else:
-        raw = file.read().decode("utf-8", errors="ignore")
-        return raw, max(1, len(raw.splitlines()) // 40 + 1)
+        text = file.read().decode("utf-8", errors="ignore")
+        return text, len(text.split('\n'))
 
-
-def query_huggingface(model_id: str, token: str, text: str, country: str = ""):
-    """Send text to the Hugging Face inference API (instruction prompt for FLAN-T5)."""
-    if not token:
-        # If no token provided, return a dummy-like response
-        class DummyResp:
-            status_code = 401
-            def json(self): return {"error": "Missing HF_TOKEN"}
-        return DummyResp()
-
+def query_huggingface(model_id, token, text, country=""):
+    """Send text to the Hugging Face inference API."""
     headers = {"Authorization": f"Bearer {token}"}
-    api_url = f"https://api-inference.huggingface.co/models/{model_id}"
-
-    # Instruction-style prompt for FLAN-T5 (trim input for reliability)
-    short_text = text[:3500]
+    API_URL = f"https://api-inference.huggingface.co/models/{model_id}"
+    
     if country:
-        prompt = (
-            f"You are a legal contract analyst specializing in {country} law.\n"
-            f"Analyze the following contract and provide:\n"
-            f"1. Key details (parties, effective dates, governing law, financial terms)\n"
-            f"2. Missing or irregular clauses\n"
-            f"3. Potential legal/financial risks\n"
-            f"4. Compliance recommendations\n\n"
-            f"Contract text:\n{short_text}"
-        )
+        prompt = f"""Based on the following text that is taken from a contract document, and based on the laws of {country},
+        analyze it for:
+        1 - Key contract information and parties
+        2 - Missing critical information
+        3 - Potential legal risks and non-standard clauses
+        4 - Recommendations for improvements
+        5 - Overall legal assessment
+        Text from legal document: {text}"""
     else:
-        prompt = (
-            "You are a legal contract analyst.\n"
-            "Analyze the following contract and provide:\n"
-            "1. Key details (parties, effective dates, governing law, financial terms)\n"
-            "2. Missing or irregular clauses\n"
-            "3. Potential legal/financial risks\n"
-            "4. Compliance recommendations\n\n"
-            f"Contract text:\n{short_text}"
-        )
-
-    payload = {"inputs": prompt, "parameters": {"max_new_tokens": 512}}
-
+        prompt = f"""Based on the following text that is taken from a contract document,
+        analyze it for:
+        1 - Key contract information and parties
+        2 - Missing critical information
+        3 - Potential legal risks and non-standard clauses
+        4 - Recommendations for improvements
+        5 - Overall legal assessment
+        Text from legal document: {text}"""
+    
+    payload = {"inputs": prompt, "parameters": {"max_new_tokens": 1024}}
     try:
-        resp = requests.post(api_url, headers=headers, json=payload, timeout=180)
-        print("HF STATUS", resp.status_code, "BODY", resp.text[:500])
-
-        # Retry once if model is loading (503 with estimated_time)
-        if resp.status_code == 503 and "estimated_time" in resp.text:
-            try:
-                wait = json.loads(resp.text).get("estimated_time", 10)
-            except Exception:
-                wait = 10
-            time.sleep(min(max(int(wait), 5), 20))
-            resp = requests.post(api_url, headers=headers, json=payload, timeout=180)
-            print("HF RETRY STATUS", resp.status_code, "BODY", resp.text[:500])
-
-        return resp
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=120)
+        return response
     except Exception as e:
-        class DummyErr:
-            status_code = 500
-            def json(self): return {"error": str(e)}
-        return DummyErr()
+        print(f"Error querying HuggingFace: {e}")
+        return None
 
-# -------------------------------
-# 🎨 UI / App (original preserved)
-# -------------------------------
+# ------------------------------------------------------------
+# 🎨 UI CONFIGURATION
+# ------------------------------------------------------------
+
 def main():
     st.set_page_config(
         page_title="Contract Analysis",
-        page_icon="logo.png",
+        page_icon="📄",
         layout="wide",
         initial_sidebar_state="expanded"
     )
 
-    # Custom CSS (same style intent as your version)
+    # Custom CSS styling
     st.markdown("""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-        * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-        #MainMenu, footer, header { visibility: hidden; }
-        .main { background-color: #FAFAFA; padding-top: 0 !important; }
+        
+        * {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+        
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+        
+        .main {
+            background-color: #FAFAFA;
+            padding-top: 0 !important;
+        }
+        
         .stButton>button {
             background: linear-gradient(90deg, #1E8C7E 0%, #2AB598 100%);
             color: white !important;
@@ -164,33 +205,56 @@ def main():
             padding: 0.75rem 2rem;
             font-weight: 600;
             border: none;
-            box-shadow: 0 4px 16px rgba(30,140,126,0.3);
+            box-shadow: 0 4px 16px rgba(30, 140, 126, 0.3);
             transition: all 0.3s ease;
             font-size: 1rem;
         }
+        
         .output-box {
-            background: rgba(30,140,126,0.05);
+            background: rgba(30, 140, 126, 0.05);
             border: 2px solid #1E8C7E;
             border-radius: 15px;
             padding: 1.5rem;
             margin: 1rem 0;
             min-height: 150px;
         }
-        .chat-container { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; }
-        .chat-box-user {
-            background: #F5F5F5; border-radius: 24px; padding: 1.5rem 2rem; margin-bottom: 1.5rem;
-            display: flex; align-items: flex-start; gap: 1rem; max-width: 85%;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        
+        .chat-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
         }
+        
+        .chat-box-user {
+            background: #F5F5F5;
+            border-radius: 24px;
+            padding: 1.5rem 2rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            max-width: 85%;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            animation: slideInLeft 0.6s ease-out;
+        }
+        
         .chat-box-ai {
-            background: #FFFFFF; border-radius: 24px; padding: 1.5rem 2rem; margin-bottom: 1.5rem; margin-left: auto;
-            display: flex; align-items: flex-start; gap: 1rem; max-width: 85%;
+            background: #FFFFFF;
+            border-radius: 24px;
+            padding: 1.5rem 2rem;
+            margin-bottom: 1.5rem;
+            margin-left: auto;
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            max-width: 85%;
             box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+            animation: slideInRight 0.6s ease-out 0.3s both;
         }
         </style>
     """, unsafe_allow_html=True)
 
-    # Hero
+    # Hero section
     st.markdown("""
     <div style="text-align: center; padding: 0.5rem 2rem 2rem 2rem; max-width: 1200px; margin: 0 auto;">
         <h1 style="font-size: 4rem; font-weight: 800; line-height: 1.2; margin-bottom: 1rem; margin-top: 0;">
@@ -204,17 +268,11 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # Session state
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    if "analysis_result" not in st.session_state:
-        st.session_state.analysis_result = None
-    if "original_language" not in st.session_state:
-        st.session_state.original_language = None
-
+    # Main content area
     col1, col2 = st.columns([2, 1])
 
     with col1:
+        # File uploader section
         uploaded_file = st.file_uploader(
             "Upload Contract Document",
             type=["txt", "pdf", "docx"],
@@ -223,134 +281,109 @@ def main():
         country = st.text_input("Specify country/region (Optional)", "")
 
         if uploaded_file:
-            with st.spinner("Processing document."):
+            # Step 1: Process uploaded file and handle translation
+            with st.spinner("Processing document..."):
                 text, num_pages = extract_text_from_file(uploaded_file)
-
-                if not text or not text.strip():
+                
+                if not text.strip():
                     st.error(f"The file {uploaded_file.name} appears to be empty or unreadable.")
-                    st.stop()
+                    return
 
+                # Detect language
                 try:
                     lang = detect(text[:500])
                     st.session_state.original_language = lang
                     st.info(f"Detected language: {lang.upper()}")
-                except Exception:
+                except:
                     lang = "unknown"
                     st.session_state.original_language = "en"
-                    st.warning("Could not detect language, proceeding with analysis.")
+                    st.warning("Could not detect language, proceeding with analysis...")
 
-                # Translate Arabic -> English for analysis
+                # Translate if Arabic
                 if lang == "ar":
-                    with st.spinner("Translating Arabic text to English."):
-                        text = translate_text(text, to_language="en")
+                    with st.spinner("Translating Arabic text to English..."):
+                        try:
+                            text = translate_text(text, to_language="en")
+                        except Exception as e:
+                            st.error(f"Translation error: {e}")
+                            return
 
+            # Display document content
             with st.expander("📄 Document Content", expanded=False):
                 st.text_area("Content", text, height=200)
 
-            # Tabs (as in your original structure: Analysis / Stats / Content)
-            t1, t2, t3 = st.tabs(["📝 Analysis", "📊 Stats", "🧾 Content"])
-
-            # Hugging Face (pre-analysis → now the main analysis)
-            with st.spinner("Analyzing document using Hugging Face (FLAN-T5)..."):
-                hf_response = query_huggingface(HF_MODEL_ID, HF_TOKEN, text, country)
-
-            hf_analysis = ""
-            if getattr(hf_response, "status_code", 0) == 200:
+            # Step 2: Process with HuggingFace model
+            with st.spinner("Performing initial legal analysis..."):
                 try:
-                    j = hf_response.json()
-                    # Accept both list and dict shapes
-                    if isinstance(j, list) and j and isinstance(j[0], dict) and "generated_text" in j[0]:
-                        hf_analysis = j[0]["generated_text"]
-                    elif isinstance(j, dict) and "generated_text" in j:
-                        hf_analysis = j["generated_text"]
-                    elif isinstance(j, dict) and "error" in j:
-                        print("HF ERROR BODY:", j.get("error"))
+                    hf_response = query_huggingface(HF_MODEL_ID, HF_TOKEN, text, country)
+                    if hf_response and hf_response.status_code == 200:
+                        st.session_state.hf_result = hf_response.json()[0]['generated_text']
+                    else:
+                        st.warning("Initial legal analysis unavailable, proceeding with alternative analysis.")
+                        st.session_state.hf_result = None
                 except Exception as e:
-                    print("HF PARSE ERROR:", e)
+                    st.warning(f"Initial analysis error: {str(e)}")
+                    st.session_state.hf_result = None
 
-            if not hf_analysis:
-                st.warning("Hugging Face analysis unavailable or failed, continuing with UI unchanged.")
+            # Step 3: Process with GPT using HF insights
+            with st.spinner("Performing comprehensive analysis..."):
+                if not st.session_state.analysis_result:
+                    response = get_chatgpt_response(
+                        text, 
+                        country, 
+                        hf_analysis=st.session_state.hf_result
+                    )
+                    st.session_state.analysis_result = response
+                    st.session_state.messages.append({"role": "assistant", "content": response})
 
-            # Set analysis_result (for the Analysis tab)
-            st.session_state.analysis_result = hf_analysis if hf_analysis else "No analysis was produced."
+            # Display analysis results
+            st.markdown("### 📊 Analysis Results")
+            st.markdown('<div class="output-box">', unsafe_allow_html=True)
+            st.write(st.session_state.analysis_result)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-            # --- Tabs content ---
-            with t1:
-                st.markdown('<div class="output-box">', unsafe_allow_html=True)
-                st.write(st.session_state.analysis_result)
-                st.markdown('</div>', unsafe_allow_html=True)
+            # Translate back to Arabic if needed
+            if lang == "ar":
+                with st.spinner("Translating analysis to Arabic..."):
+                    try:
+                        arabic_response = translate_text(st.session_state.analysis_result, to_language="ar")
+                        st.markdown("### 🔄 Arabic Translation")
+                        st.markdown('<div class="output-box">', unsafe_allow_html=True)
+                        st.write(arabic_response)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                    except Exception as e:
+                        st.error(f"Translation error: {e}")
 
-            with t2:
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.markdown(f"""
-                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                                padding: 2rem; border-radius: 15px; color: white; text-align: center;
-                                box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-                        <h1 style="margin: 0; color: white; font-size: 2.5rem;">{num_pages}</h1>
-                        <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">📄 Pages</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                with c2:
-                    word_count = len(text.split())
-                    st.markdown(f"""
-                    <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-                                padding: 2rem; border-radius: 15px; color: white; text-align: center;
-                                box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-                        <h1 style="margin: 0; color: white; font-size: 2.5rem;">{word_count:,}</h1>
-                        <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">📝 Words</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                with c3:
-                    char_count = len(text)
-                    st.markdown(f"""
-                    <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-                                padding: 2rem; border-radius: 15px; color: white; text-align: center;
-                                box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-                        <h1 style="margin: 0; color: white; font-size: 2.5rem;">{char_count:,}</h1>
-                        <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">🔤 Characters</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-            with t3:
-                st.markdown('<div class="output-box">', unsafe_allow_html=True)
-                st.text_area("Document Content", text, height=200)
-                st.markdown('</div>', unsafe_allow_html=True)
-
-            # If original doc was Arabic, optionally translate analysis back to Arabic
-            if st.session_state.original_language == "ar" and hf_analysis:
-                with st.spinner("Translating analysis to Arabic."):
-                    arabic_response = translate_text(st.session_state.analysis_result, to_language="ar")
-                    st.markdown("### 🔄 Arabic Translation")
-                    st.markdown('<div class="output-box">', unsafe_allow_html=True)
-                    st.write(arabic_response)
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-    # Right column: Chat with AI (unchanged UI)
+    # Chat interface in the second column
     with col2:
         st.markdown("### 💬 Chat with AI")
-
+        
+        # Display chat messages
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.write(message["content"])
 
-        if prompt := st.chat_input("Ask questions about the document."):
+        # Chat input
+        if prompt := st.chat_input("Ask questions about the document..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("assistant"):
-                with st.spinner("ChatGPT thinking..."):
-                    response = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {"role": "system", "content": "You are a helpful legal assistant."},
-                            {"role": "user", "content": prompt}
-                        ]
-                    )
-                    reply = response.choices[0].message.content
-                    st.write(reply)
-                    st.session_state.messages.append({"role": "assistant", "content": reply})
+            
+            # Get AI response
+            if st.session_state.analysis_result:
+                context = f"""Based on this analysis of the legal document:
+                {st.session_state.analysis_result}
+                
+                Answer this question: {prompt}"""
+                
+                response = get_chatgpt_response(context)
+                
+                # Translate response if needed
+                if st.session_state.original_language == "ar":
+                    try:
+                        response = translate_text(response, to_language="ar")
+                    except Exception as e:
+                        st.error(f"Translation error: {e}")
+                
+                st.session_state.messages.append({"role": "assistant", "content": response})
 
-# -------------------------------
-# 🚀 Run App
-# -------------------------------
 if __name__ == "__main__":
     main()
