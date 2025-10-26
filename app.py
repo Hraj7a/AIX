@@ -347,7 +347,7 @@ def main():
                     st.session_state.messages.append({"role": "assistant", "content": response})
 
 
-            st.markdown("### 📊 Analysis Results")
+            st.markdown("###Analysis Results")
             st.write(st.session_state.analysis_result)
 
             # Translate back to Arabic if needed
