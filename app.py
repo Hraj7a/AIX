@@ -372,26 +372,39 @@ def main():
                 st.write(message["content"])
 
         # Chat input
-        if prompt := st.chat_input("Ask questions about the document..."):
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            
-            # Get AI response
-            if st.session_state.analysis_result:
-                context = f"""Based on this analysis of the legal document:
-                {st.session_state.analysis_result}
-                
-                Answer this question: {prompt}"""
-                
-                response = get_chatgpt_response(context, model="gpt-4o-mini")
-                
-                # Translate response if needed
-                if st.session_state.original_language == "ar":
-                    try:
-                        response = translate_text(response, to_language="ar")
-                    except Exception as e:
-                        st.error(f"Translation error: {e}")
-                
-                st.session_state.messages.append({"role": "assistant", "content": response})
+# Chat input + manual submit option
+    chat_col = st.container()
+    with chat_col:
+        user_question = st.text_input("Ask about the document...", key="chat_question")
+        send_button = st.button("Send")
+
+    if send_button and user_question:
+        st.session_state.messages.append({"role": "user", "content": user_question})
+
+    # Create context from analysis
+        context = f"""Based on this analysis of the legal document:
+        {st.session_state.analysis_result}
+    
+        Answer this question: {user_question}"""
+
+    # Get response from GPT-4o-mini
+        response = get_chatgpt_response(context, model="gpt-4o-mini")
+
+    # Translate back if needed
+        if st.session_state.original_language == "ar":
+            try:
+                response = translate_text(response, to_language="ar")
+            except Exception as e:
+                st.error(f"Translation error: {e}")
+
+    # Store assistant message
+        st.session_state.messages.append({"role": "assistant", "content": response})
+
+# Display messages dynamically after user sends
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+
 
 if __name__ == "__main__":
     if "messages" not in st.session_state:
