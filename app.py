@@ -25,7 +25,7 @@ translator_client = TextTranslationClient(
 )
 
 # HuggingFace
-HF_MODEL_ID = "jordyvl/flan-t5-legal-summarizerF"
+HF_MODEL_ID = "aun09/flan-t5-legal-summary"
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 # OpenAI
