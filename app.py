@@ -277,13 +277,14 @@ def main():
 
     with col1:
         # File uploader section
-        uploaded_file = st.file_uploader(
+        with st.form("analysis_form", clear_on_submit=False):
+            uploaded_file = st.file_uploader(
             "Upload Contract Document",
             type=["txt", "pdf", "docx"],
             help="Supported formats: PDF (.pdf), Word (.docx), and text (.txt) files"
-        )
-        country = st.text_input("Specify country/region (Optional)", "")
-
+            )
+            country = st.text_input("Specify country/region (Optional)", "")
+            submitted = st.form_submit_button("Analyze")
         if uploaded_file:
             # Step 1: Process uploaded file and handle translation
             with st.spinner("Processing document..."):
@@ -321,28 +322,15 @@ def main():
                 st.session_state.hf_result = None
                 try:
                     hf_response = query_huggingface(HF_MODEL_ID, HF_TOKEN, text, country)
+                    # AFTER (silent fallback; no visible warnings/errors)
+                    st.session_state.hf_result = None
                     if hf_response is not None and hf_response.status_code == 200:
                         data = hf_response.json()
-            
-            # Check for error key
-                        if isinstance(data, dict) and "error" in data:
-                            st.warning(f"⚠️ Hugging Face model error: {data['error']}")
-            # Typical flan-t5 response is dict with 'generated_text'
-                        elif isinstance(data, dict) and "generated_text" in data:
-                            st.session_state.hf_result = data["generated_text"]
-            # Some models return a list with dicts
+                        if isinstance(data, dict) and "generated_text" in data:
+                             st.session_state.hf_result = data["generated_text"]
                         elif isinstance(data, list) and len(data) > 0 and "generated_text" in data[0]:
                             st.session_state.hf_result = data[0]["generated_text"]
-                        else:
-                            st.warning(f"⚠️ Unexpected HF response format: {data}")
-
-                        if st.session_state.hf_result:
-                            st.success("✅ Legal analysis completed by fine-tuned model.")
-                        else:
-                            st.warning("⚠️ No valid text returned from Hugging Face model.")
-                    else:
-                        st.warning(f"⚠️ Hugging Face model unavailable (status code {getattr(hf_response, 'status_code', 'N/A')}).")
-
+                   
                 except Exception as e:
                     st.warning(f"Initial analysis error: {str(e)}")
 
@@ -358,11 +346,9 @@ def main():
                     st.session_state.analysis_result = response
                     st.session_state.messages.append({"role": "assistant", "content": response})
 
-            # Display analysis results
+
             st.markdown("### 📊 Analysis Results")
-            st.markdown('<div class="output-box">', unsafe_allow_html=True)
             st.write(st.session_state.analysis_result)
-            st.markdown('</div>', unsafe_allow_html=True)
 
             # Translate back to Arabic if needed
             if lang == "ar":
