@@ -318,25 +318,33 @@ def main():
 
             # Step 2: Process with HuggingFace model
             with st.spinner("Performing initial legal analysis..."):
-                hf_response = None  # initialize here
-                st.session_state.hf_result = None  # default to None
+                st.session_state.hf_result = None
                 try:
                     hf_response = query_huggingface(HF_MODEL_ID, HF_TOKEN, text, country)
                     if hf_response is not None and hf_response.status_code == 200:
                         data = hf_response.json()
-                        if isinstance(data, list) and "generated_text" in data[0]:
+            
+            # Check for error key
+                        if isinstance(data, dict) and "error" in data:
+                            st.warning(f"⚠️ Hugging Face model error: {data['error']}")
+            # Typical flan-t5 response is dict with 'generated_text'
+                        elif isinstance(data, dict) and "generated_text" in data:
+                            st.session_state.hf_result = data["generated_text"]
+            # Some models return a list with dicts
+                        elif isinstance(data, list) and len(data) > 0 and "generated_text" in data[0]:
                             st.session_state.hf_result = data[0]["generated_text"]
+                        else:
+                            st.warning(f"⚠️ Unexpected HF response format: {data}")
+
+                        if st.session_state.hf_result:
                             st.success("✅ Legal analysis completed by fine-tuned model.")
                         else:
-                            st.session_state.hf_result = None
                             st.warning("⚠️ No valid text returned from Hugging Face model.")
                     else:
-                        st.warning("⚠️ Hugging Face model unavailable — skipping legal analysis.")
-                        st.session_state.hf_result = None
+                        st.warning(f"⚠️ Hugging Face model unavailable (status code {getattr(hf_response, 'status_code', 'N/A')}).")
 
                 except Exception as e:
                     st.warning(f"Initial analysis error: {str(e)}")
-                    st.session_state.hf_result = None
 
             # Step 3: Process with GPT using HF insights
             with st.spinner("Performing comprehensive analysis..."):
