@@ -25,7 +25,7 @@ translator_client = TextTranslationClient(
 )
 
 # HuggingFace
-HF_MODEL_ID = "google/flan-t5-large"
+HF_MODEL_ID = "jordyvl/flan-t5-legal-summarizerF"
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 # OpenAI
@@ -319,24 +319,31 @@ def main():
             # Step 2: Process with HuggingFace model
             with st.spinner("Performing initial legal analysis..."):
                 try:
-                    hf_response = query_huggingface(HF_MODEL_ID, HF_TOKEN, text, country)
-                    if hf_response and hf_response.status_code == 200:
-                        st.session_state.hf_result = hf_response.json()[0]['generated_text']
+                    if hf_response is not None and hf_response.status_code == 200:
+                    data = hf_response.json()
+                        if isinstance(data, list) and "generated_text" in data[0]:
+                            st.session_state.hf_result = data[0]["generated_text"]
+                            st.success("✅ Legal analysis completed by fine-tuned model.")
+                        else:
+                            st.session_state.hf_result = None
+                            st.warning("⚠️ No valid text returned from Hugging Face model.")
                     else:
-                        st.warning("Initial legal analysis unavailable, proceeding with alternative analysis.")
+                        st.warning("⚠️ Hugging Face model unavailable — skipping legal analysis.")
                         st.session_state.hf_result = None
+
                 except Exception as e:
                     st.warning(f"Initial analysis error: {str(e)}")
                     st.session_state.hf_result = None
 
             # Step 3: Process with GPT using HF insights
             with st.spinner("Performing comprehensive analysis..."):
-                if not st.session_state.analysis_result:
-                    response = get_chatgpt_response(
-                        text, 
-                        country, 
-                        hf_analysis=st.session_state.hf_result
-                    )
+                if st.session_state.hf_result:
+        # ✅ Use only Hugging Face analysis (no GPT)
+                    st.session_state.analysis_result = st.session_state.hf_result
+                    st.session_state.messages.append({"role": "assistant", "content": st.session_state.hf_result})
+                else:
+        # ⚙️ Fallback to GPT if HF failed
+                    response = get_chatgpt_response(text, country)
                     st.session_state.analysis_result = response
                     st.session_state.messages.append({"role": "assistant", "content": response})
 
@@ -378,7 +385,7 @@ def main():
                 
                 Answer this question: {prompt}"""
                 
-                response = get_chatgpt_response(context)
+                response = get_chatgpt_response(context, model="gpt-4o-mini")
                 
                 # Translate response if needed
                 if st.session_state.original_language == "ar":
@@ -390,4 +397,10 @@ def main():
                 st.session_state.messages.append({"role": "assistant", "content": response})
 
 if __name__ == "__main__":
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    if "analysis_result" not in st.session_state:
+        st.session_state.analysis_result = ""
+    if "hf_result" not in st.session_state:
+        st.session_state.hf_result = None
     main()
