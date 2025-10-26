@@ -21,7 +21,7 @@ AZURE_TRANSLATOR_ENDPOINT = os.getenv("AZURE_TRANSLATOR_ENDPOINT", "https://sala
 AZURE_TRANSLATOR_REGION = os.getenv("AZURE_TRANSLATOR_REGION", "qatarcentral")
 
 # HuggingFace
-HF_MODEL_ID = "mrm8488/T5-base-finetuned-cuad"
+HF_MODEL_ID = "google/flan-t5-large"
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 # OpenAI
