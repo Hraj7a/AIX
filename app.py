@@ -8,6 +8,7 @@ from azure.ai.translation.text import TextTranslationClient
 from azure.core.credentials import AzureKeyCredential
 from openai import OpenAI
 import io
+import time
 
 
 # ------------------------------------------------------------
@@ -47,51 +48,50 @@ if 'hf_result' not in st.session_state:
 # ------------------------------------------------------------
 # 🛠 HELPER FUNCTIONS
 # ------------------------------------------------------------
+# def get_chatgpt_response(text, country="", model="gpt-4o-mini", hf_analysis=None):
+#     """Get analysis from ChatGPT with optional HuggingFace analysis integration."""
+#     try:
+#         if country:
+#                 prompt = f"""Based on the previous legal analysis and the contract text, and considering the laws of {country},
+#                 provide a comprehensive analysis incorporating the previous insights and add your analysis on:
+#                 1 - Extracted contract information (eg. contracting parties, effective dates, governing laws, financial terms, etc),
+#                 2 - Give me details on the missing information from the document if there is any,
+#                 3 - Analysis of potential risks, such as non-standard clauses,
+#                 4 - Give me legal advice on what to change in the document, opinions, or law comparisons,
+#                 5 - Summarized overview of extracted information, missing items, and potential risks.
+#                 
+#                 Previous Legal Analysis:
+#                 {hf_analysis}
+#                 
+#                 Contract Text:
+#                 {text}"""
+#         else:
+#                 prompt = f"""Based on the previous legal analysis and the contract text, 
+#                 provide a comprehensive analysis incorporating the previous insights and add your analysis on:
+#                 1 - Extracted contract information (eg. contracting parties, effective dates, governing laws, financial terms, etc),
+#                 2 - Give me details on the missing information from the document if there is any,
+#                 3 - Analysis of potential risks, such as non-standard clauses,
+#                 4 - Give me legal advice on what to change in the document, opinions, or law comparisons,
+#                 5 - Summarized overview of extracted information, missing items, and potential risks.
+#                 
+#                 Previous Legal Analysis:
+#                 {hf_analysis}
+#                 
+#                 Contract Text:
+#                 {text}"""
 
-def get_chatgpt_response(text, country="", model="gpt-4o-mini", hf_analysis=None):
-    """Get analysis from ChatGPT with optional HuggingFace analysis integration."""
-    try:
-        if country:
-                prompt = f"""Based on the previous legal analysis and the contract text, and considering the laws of {country},
-                provide a comprehensive analysis incorporating the previous insights and add your analysis on:
-                1 - Extracted contract information (eg. contracting parties, effective dates, governing laws, financial terms, etc),
-                2 - Give me details on the missing information from the document if there is any,
-                3 - Analysis of potential risks, such as non-standard clauses,
-                4 - Give me legal advice on what to change in the document, opinions, or law comparisons,
-                5 - Summarized overview of extracted information, missing items, and potential risks.
-                
-                Previous Legal Analysis:
-                {hf_analysis}
-                
-                Contract Text:
-                {text}"""
-        else:
-                prompt = f"""Based on the previous legal analysis and the contract text, 
-                provide a comprehensive analysis incorporating the previous insights and add your analysis on:
-                1 - Extracted contract information (eg. contracting parties, effective dates, governing laws, financial terms, etc),
-                2 - Give me details on the missing information from the document if there is any,
-                3 - Analysis of potential risks, such as non-standard clauses,
-                4 - Give me legal advice on what to change in the document, opinions, or law comparisons,
-                5 - Summarized overview of extracted information, missing items, and potential risks.
-                
-                Previous Legal Analysis:
-                {hf_analysis}
-                
-                Contract Text:
-                {text}"""
-
-        messages = [{"role": "user", "content": prompt}]
-        
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            max_tokens=2048,
-            n=1,
-            temperature=0.7,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        return "Error: Could not get response from ChatGPT"
+#         messages = [{"role": "user", "content": prompt}]
+#         
+#         response = client.chat.completions.create(
+#             model=model,
+#             messages=messages,
+#             max_tokens=2048,
+#             n=1,
+#             temperature=0.7,
+#         )
+#         return response.choices[0].message.content.strip()
+#     except Exception as e:
+#         return "Error: Could not get response from ChatGPT"
 
 def translate_text(text, to_language="en"):
     """Translate text to target language using Azure Translator."""
@@ -297,30 +297,65 @@ def main():
             # Step 2: Process with HuggingFace model
             with st.spinner("Performing initial legal analysis..."):
                 st.session_state.hf_result = None
-                try:
-                    hf_response = query_huggingface(HF_MODEL_ID, HF_TOKEN, text, country)
-                    # AFTER (silent fallback; no visible warnings/errors)
-                    st.session_state.hf_result = None
-                    if hf_response is not None and hf_response.status_code == 200:
-                        data = hf_response.json()
-                        if isinstance(data, dict) and "generated_text" in data:
-                             st.session_state.hf_result = data["generated_text"]
-                        elif isinstance(data, list) and len(data) > 0 and "generated_text" in data[0]:
-                            st.session_state.hf_result = data[0]["generated_text"]
-                    else:
-                        st.warning("Hugging Face model did not return a valid response, proceeding with GPT analysis...")
-                except Exception as e:
-                    st.warning(f"Initial analysis error: {str(e)}")
+                if not HF_TOKEN:
+                    st.warning("Hugging Face token is not set. Please configure HF_TOKEN to use the HF model.")
+                else:
+                    try:
+                        hf_response = query_huggingface(HF_MODEL_ID, HF_TOKEN, text, country)
+                        st.session_state.hf_result = None
+
+                        # Handle no response (network/timeout)
+                        if hf_response is None:
+                            st.warning("Could not reach Hugging Face Inference API (network/timeout).")
+                        else:
+                            # Handle model loading (503) with limited retries
+                            if hf_response.status_code == 503:
+                                try:
+                                    payload = hf_response.json()
+                                except Exception:
+                                    payload = {}
+                                estimated = payload.get("estimated_time", 10)
+                                st.info(f"HF model is loading. Retrying in {int(estimated)}s...")
+                                time.sleep(min(int(estimated), 15))
+                                # Retry a couple of times
+                                for _ in range(2):
+                                    retry_resp = query_huggingface(HF_MODEL_ID, HF_TOKEN, text, country)
+                                    if retry_resp is not None and retry_resp.status_code == 200:
+                                        hf_response = retry_resp
+                                        break
+                                    time.sleep(2)
+
+                            # If OK, parse output
+                            if hf_response is not None and hf_response.status_code == 200:
+                                try:
+                                    data = hf_response.json()
+                                    if isinstance(data, dict) and "generated_text" in data:
+                                        st.session_state.hf_result = data["generated_text"]
+                                    elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict) and "generated_text" in data[0]:
+                                        st.session_state.hf_result = data[0]["generated_text"]
+                                    else:
+                                        st.warning("HF response received but in an unexpected format. Showing raw output below.")
+                                        st.code(str(data))
+                                except Exception as parse_err:
+                                    st.error(f"Failed to parse HF response: {parse_err}")
+                            elif hf_response is not None:
+                                # Show precise error for common statuses
+                                try:
+                                    err_text = hf_response.text
+                                except Exception:
+                                    err_text = ""
+                                if hf_response.status_code in (401, 403):
+                                    st.error("Hugging Face authorization failed (check HF_TOKEN permissions or model visibility).")
+                                else:
+                                    st.warning(f"HF model request failed: {hf_response.status_code}. Details: {err_text[:500]}")
+                    except Exception as e:
+                        st.warning(f"Initial analysis error: {str(e)}")
 
             # Step 3: Process with GPT using HF insights
             with st.spinner("Performing comprehensive analysis..."):
                 if st.session_state.hf_result:
                     # ✅ Use only Hugging Face analysis (no GPT)
                     st.session_state.analysis_result = st.session_state.hf_result
-                else:
-                    # ⚙ Fallback to GPT if HF failed
-                    response = get_chatgpt_response(text, country)
-                    st.session_state.analysis_result = response
 
 
             st.markdown("###Analysis Results")
