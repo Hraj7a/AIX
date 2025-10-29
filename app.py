@@ -249,6 +249,11 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
+    # Sidebar configuration
+    st.sidebar.markdown("## Settings")
+    hf_model_id_input = st.sidebar.text_input("HF Model ID", value=HF_MODEL_ID)
+    st.sidebar.caption("Change this if you get a 404: verify the exact model repo name.")
+
     # Main content area
     col1, col2 = st.columns([2, 1])
 
@@ -301,7 +306,7 @@ def main():
                     st.warning("Hugging Face token is not set. Please configure HF_TOKEN to use the HF model.")
                 else:
                     try:
-                        hf_response = query_huggingface(HF_MODEL_ID, HF_TOKEN, text, country)
+                        hf_response = query_huggingface(hf_model_id_input, HF_TOKEN, text, country)
                         st.session_state.hf_result = None
 
                         # Handle no response (network/timeout)
@@ -319,7 +324,7 @@ def main():
                                 time.sleep(min(int(estimated), 15))
                                 # Retry a couple of times
                                 for _ in range(2):
-                                    retry_resp = query_huggingface(HF_MODEL_ID, HF_TOKEN, text, country)
+                                    retry_resp = query_huggingface(hf_model_id_input, HF_TOKEN, text, country)
                                     if retry_resp is not None and retry_resp.status_code == 200:
                                         hf_response = retry_resp
                                         break
@@ -346,6 +351,8 @@ def main():
                                     err_text = ""
                                 if hf_response.status_code in (401, 403):
                                     st.error("Hugging Face authorization failed (check HF_TOKEN permissions or model visibility).")
+                                elif hf_response.status_code == 404:
+                                    st.error("HF model not found (404). Please verify the model ID in the sidebar.")
                                 else:
                                     st.warning(f"HF model request failed: {hf_response.status_code}. Details: {err_text[:500]}")
                     except Exception as e:
