@@ -154,53 +154,100 @@ def query_huggingface(model_id, token, text, country=""):
 # ------------------------------------------------------------
 # 🎨 UI CONFIGURATION
 # ------------------------------------------------------------
-
 def main():
-    st.set_page_config(
-        page_title="Contract Analysis",
-        page_icon="📄",
-        layout="wide"
-    )
+    st.set_page_config(page_title="Contract Analysis", page_icon="📄", layout="wide")
 
-    # --------------------------------------------------
-    # PAGE 1: ANALYSIS PAGE
-    # --------------------------------------------------
+    # ----------------------------
+    # PAGE 1: UPLOAD + ANALYSIS
+    # ----------------------------
     if st.session_state.mode == "analyze":
         st.markdown("""
-        <div style="text-align: center; padding: 1rem 2rem; max-width: 1200px; margin: 0 auto;">
-            <h1 style="font-size: 3rem; font-weight: 800; margin-bottom: 0.5rem;">
+        <div style="text-align:center; padding:1rem 2rem; max-width:1200px; margin:auto;">
+            <h1 style="font-size:3rem; font-weight:800;">
                 Analyze your Contracts with <span style="color:#1E8C7E;">Naja7</span>
             </h1>
-            <p style="font-size: 1.1rem; color: #6B7280;">Upload your contract to extract, analyze, and understand its contents using AI.</p>
+            <p style="font-size:1.1rem; color:#6B7280;">
+                Upload your contract to extract, analyze, and understand its content using AI.
+            </p>
         </div>
         """, unsafe_allow_html=True)
 
-        uploaded_file = st.file_uploader("Upload Contract Document", type=["txt", "pdf", "docx"])
-        country = st.text_input("Specify country/region (Optional)", "")
-        analyze_button = st.button("Analyze")
+        uploaded_file = st.file_uploader("📎 Upload Contract Document", type=["txt", "pdf", "docx"])
+        country = st.text_input("🌍 Specify country/region (Optional)", "")
+        analyze_button = st.button("🔍 Analyze")
 
         if uploaded_file and analyze_button:
-            with st.spinner("Analyzing your contract..."):
-                text, num_pages = extract_text_from_file(uploaded_file)
-                st.session_state.analysis_result = text[:2000]  # (your analysis logic here)
-                st.session_state.mode = "chat"
-                st.rerun()
+            with st.spinner("Performing legal analysis..."):
+                # 1️⃣ Extract text
+                text, _ = extract_text_from_file(uploaded_file)
+                if not text.strip():
+                    st.error("The file appears to be empty or unreadable.")
+                    return
 
+                # 2️⃣ Detect & translate Arabic if needed
+                try:
+                    lang = detect(text[:500])
+                    st.session_state.original_language = lang
+                    st.info(f"Detected language: {lang.upper()}")
+                    if lang == "ar":
+                        text = translate_text(text, "en")
+                except Exception as e:
+                    st.warning("Language detection failed; proceeding in English.")
+                    lang = "en"
 
-    # --------------------------------------------------
-    # PAGE 2: CHAT PAGE
-    # --------------------------------------------------
+                # 3️⃣ Hugging Face analysis
+                hf_response = query_huggingface(HF_MODEL_ID, HF_TOKEN, text, country)
+                hf_result = None
+                if hf_response and hf_response.status_code == 200:
+                    data = hf_response.json()
+                    if isinstance(data, list) and "generated_text" in data[0]:
+                        hf_result = data[0]["generated_text"]
+                    elif isinstance(data, dict) and "generated_text" in data:
+                        hf_result = data["generated_text"]
+                else:
+                    st.warning("⚠️ Hugging Face model did not return a valid response.")
+                    hf_result = None
+
+                st.session_state.hf_result = hf_result or "No Hugging Face result available."
+
+                # 4️⃣ GPT enhancement
+                with st.spinner("Enhancing analysis with GPT..."):
+                    gpt_response = get_chatgpt_response(
+                        text,
+                        country,
+                        hf_analysis=st.session_state.hf_result
+                    )
+                    st.session_state.analysis_result = gpt_response
+
+                # 5️⃣ Show analysis results on same page
+                st.success("✅ Analysis complete!")
+
+                with st.expander("📘 Hugging Face Analysis", expanded=True):
+                    st.write(st.session_state.hf_result)
+
+                with st.expander("🧠 GPT Comprehensive Analysis", expanded=True):
+                    st.write(st.session_state.analysis_result)
+
+                # 6️⃣ Ask Question Button
+                st.markdown("---")
+                if st.button("💬 Ask a Question About This Contract"):
+                    st.session_state.mode = "chat"
+                    st.rerun()
+
+    # ----------------------------
+    # PAGE 2: CHAT / Q&A PAGE
+    # ----------------------------
     elif st.session_state.mode == "chat":
-        st.markdown("### 💬 Chat with AI about your Contract")
+        st.markdown("## 💬 Ask Questions About the Contract")
 
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
 
-        user_question = st.text_input("Ask a question about the contract...")
+        user_question = st.text_input("Type your question...")
         col1, col2 = st.columns([1, 3])
         with col1:
-            back_btn = st.button("⬅ Back to Upload")
+            back_btn = st.button("⬅ Back to Analysis")
         with col2:
             send_btn = st.button("Send")
 
@@ -208,16 +255,17 @@ def main():
             st.session_state.mode = "analyze"
             st.rerun()
 
-
         if send_btn and user_question:
             st.session_state.messages.append({"role": "user", "content": user_question})
-
-            context = f"""Contract Analysis:
+            context = f"""Based on this analysis:
             {st.session_state.analysis_result}
 
             Question: {user_question}"""
-
             response = get_chatgpt_response(context, model="gpt-4o-mini")
+
+            if st.session_state.original_language == "ar":
+                response = translate_text(response, "ar")
+
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.rerun()
 
