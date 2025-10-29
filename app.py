@@ -157,61 +157,64 @@ def query_huggingface(model_id, token, text, country=""):
 # 🎨 UI CONFIGURATION
 # ------------------------------------------------------------
 def main():
-    st.set_page_config(page_title="Contract Analyzer", page_icon="📄")
+    st.set_page_config(page_title="Naja7 Contract Analyzer", page_icon="📄")
 
     # === PAGE 1: UPLOAD + ANALYSIS ===
     if st.session_state.mode == "analyze":
-        st.title("📄 Contract Analyzer")
+        st.title("📄 Naja7 Contract Analyzer")
+        st.caption("AI-powered contract insights by Naja7")
 
         uploaded_file = st.file_uploader("Upload your contract", type=["pdf", "docx", "txt"])
         country = st.text_input("Country (optional)")
         analyze_btn = st.button("🔍 Analyze")
 
         if uploaded_file and analyze_btn:
-            with st.spinner("Analyzing contract..."):
-                # (replace this with your actual HuggingFace + GPT logic)
+            with st.spinner("Analyzing your contract with Naja7 AI..."):
+                # Replace this mock text with your HuggingFace + GPT integration
                 st.session_state.hf_result = "🧾 [HuggingFace] This contract defines obligations and penalties..."
-                st.session_state.analysis_result = "🧠 [GPT] This contract appears valid but missing confidentiality clause."
+                st.session_state.analysis_result = (
+                    "🧠 [Naja7 AI] The contract seems valid but missing a confidentiality clause."
+                )
 
-            st.success("✅ Analysis complete!")
+            st.success("✅ Naja7 has completed the analysis!")
 
             st.subheader("📘 HuggingFace Summary")
             st.write(st.session_state.hf_result)
 
-            st.subheader("🧠 GPT Enhanced Analysis")
+            st.subheader("🧠 Naja7 AI Legal Insights")
             st.write(st.session_state.analysis_result)
 
             st.markdown("---")
-            if st.button("💬 Ask a Question About This Contract"):
+            if st.button("💬 Ask Naja7 About This Contract"):
                 st.session_state.mode = "chat"
                 st.rerun()
 
     # === PAGE 2: Q&A CHAT ===
     elif st.session_state.mode == "chat":
-        st.title("💬 Contract Q&A")
-
-        st.markdown("Ask questions about your analyzed contract below:")
+        st.title("💬 Naja7 Legal Q&A")
+        st.caption("Ask questions and get AI-powered legal insights from Naja7")
 
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
 
-        user_input = st.chat_input("Ask your question here...")
+        user_input = st.chat_input("Ask Naja7 about your contract...")
 
         if user_input:
             st.session_state.messages.append({"role": "user", "content": user_input})
 
-            # Simulate GPT response (replace with your API call)
-            response = f"🤖 This clause relates to payment terms. It’s consistent with contract standards."
+            # Replace this with your GPT API logic
+            response = (
+                f"🤖 [Naja7 AI] This clause refers to payment terms. "
+                f"It aligns with standard contract practices."
+            )
             st.session_state.messages.append({"role": "assistant", "content": response})
-
             st.rerun()
 
         st.markdown("---")
-        if st.button("⬅ Back to Analysis Page"):
+        if st.button("⬅ Back to Naja7 Contract Analysis"):
             st.session_state.mode = "analyze"
             st.rerun()
-
 
 
 if __name__ == "__main__":
