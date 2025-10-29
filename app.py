@@ -44,6 +44,8 @@ if 'original_language' not in st.session_state:
     st.session_state.original_language = None
 if 'hf_result' not in st.session_state:
     st.session_state.hf_result = None
+if 'hf_token' not in st.session_state:
+    st.session_state.hf_token = HF_TOKEN or ""
 
 # ------------------------------------------------------------
 # 🛠 HELPER FUNCTIONS
@@ -254,6 +256,15 @@ def main():
     hf_model_id_input = st.sidebar.text_input("HF Model ID", value=HF_MODEL_ID)
     st.sidebar.caption("Change this if you get a 404: verify the exact model repo name.")
 
+    # HF Token control
+    hf_token_input = st.sidebar.text_input("HF Token", value=st.session_state.hf_token, type="password")
+    if hf_token_input != st.session_state.hf_token:
+        st.session_state.hf_token = hf_token_input
+    if st.session_state.hf_token:
+        st.sidebar.success("HF token detected and will be used for requests.")
+    else:
+        st.sidebar.warning("No HF token set; HF analysis will be skipped.")
+
     # Main content area
     col1, col2 = st.columns([2, 1])
 
@@ -302,11 +313,11 @@ def main():
             # Step 2: Process with HuggingFace model
             with st.spinner("Performing initial legal analysis..."):
                 st.session_state.hf_result = None
-                if not HF_TOKEN:
+                if not st.session_state.hf_token:
                     st.warning("Hugging Face token is not set. Please configure HF_TOKEN to use the HF model.")
                 else:
                     try:
-                        hf_response = query_huggingface(hf_model_id_input, HF_TOKEN, text, country)
+                        hf_response = query_huggingface(hf_model_id_input, st.session_state.hf_token, text, country)
                         st.session_state.hf_result = None
 
                         # Handle no response (network/timeout)
@@ -324,7 +335,7 @@ def main():
                                 time.sleep(min(int(estimated), 15))
                                 # Retry a couple of times
                                 for _ in range(2):
-                                    retry_resp = query_huggingface(hf_model_id_input, HF_TOKEN, text, country)
+                                    retry_resp = query_huggingface(hf_model_id_input, st.session_state.hf_token, text, country)
                                     if retry_resp is not None and retry_resp.status_code == 200:
                                         hf_response = retry_resp
                                         break
