@@ -307,7 +307,8 @@ def main():
                              st.session_state.hf_result = data["generated_text"]
                         elif isinstance(data, list) and len(data) > 0 and "generated_text" in data[0]:
                             st.session_state.hf_result = data[0]["generated_text"]
-                   
+                    else:
+                        st.warning("Hugging Face model did not return a valid response, proceeding with GPT analysis...")
                 except Exception as e:
                     st.warning(f"Initial analysis error: {str(e)}")
 
