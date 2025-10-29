@@ -48,12 +48,10 @@ if 'hf_result' not in st.session_state:
 # 🛠 HELPER FUNCTIONS
 # ------------------------------------------------------------
 
-def get_chatgpt_response(text, country="", model="gpt-3.5-turbo", hf_analysis=None):
+def get_chatgpt_response(text, country="", model="gpt-4o-mini", hf_analysis=None):
     """Get analysis from ChatGPT with optional HuggingFace analysis integration."""
     try:
-        if hf_analysis:
-            # Enhanced prompt using HF analysis
-            if country:
+        if country:
                 prompt = f"""Based on the previous legal analysis and the contract text, and considering the laws of {country},
                 provide a comprehensive analysis incorporating the previous insights and add your analysis on:
                 1 - Extracted contract information (eg. contracting parties, effective dates, governing laws, financial terms, etc),
@@ -67,7 +65,7 @@ def get_chatgpt_response(text, country="", model="gpt-3.5-turbo", hf_analysis=No
                 
                 Contract Text:
                 {text}"""
-            else:
+        else:
                 prompt = f"""Based on the previous legal analysis and the contract text, 
                 provide a comprehensive analysis incorporating the previous insights and add your analysis on:
                 1 - Extracted contract information (eg. contracting parties, effective dates, governing laws, financial terms, etc),
@@ -81,26 +79,6 @@ def get_chatgpt_response(text, country="", model="gpt-3.5-turbo", hf_analysis=No
                 
                 Contract Text:
                 {text}"""
-        else:
-            # Original prompt without HF analysis
-            if country:
-                prompt = f"""Based on the following text that is taken from a contract document, and based on the laws of {country},
-                I want you to analyze it and produce the following:
-                1 - Extracted contract information (eg. contracting parties, effective dates, governing laws, financial terms, etc),
-                2 - Give me details on the missing information from the document if there is any,
-                3 - Analysis of potential risks, such as non-standard clauses,
-                4 - Give me legal advice on what to change in the document, opinions, or law comparisons,
-                5 - Summarized overview of extracted information, missing items, and potential risks.
-                Text from legal document: {text}"""
-            else:
-                prompt = f"""Based on the following text that is taken from a contract document,
-                I want you to analyze it and produce the following:
-                1 - Extracted contract information (eg. contracting parties, effective dates, governing laws, financial terms, etc),
-                2 - Give me details on the missing information from the document if there is any,
-                3 - Analysis of potential risks, such as non-standard clauses,
-                4 - Give me legal advice on what to change in the document, opinions, or law comparisons,
-                5 - Summarized overview of extracted information, missing items, and potential risks.
-                Text from legal document: {text}"""
 
         messages = [{"role": "user", "content": prompt}]
         
@@ -113,7 +91,6 @@ def get_chatgpt_response(text, country="", model="gpt-3.5-turbo", hf_analysis=No
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        print(f"Error getting ChatGPT response: {e}")
         return "Error: Could not get response from ChatGPT"
 
 def translate_text(text, to_language="en"):
@@ -157,6 +134,7 @@ def query_huggingface(model_id, token, text, country=""):
     else:
         prompt = f"""Based on the following text that is taken from a contract document,
         analyze it for:
+        0- which parties does this conract fevor more "answer only by it name at first line"?
         1 - Key contract information and parties
         2 - Missing critical information
         3 - Potential legal risks and non-standard clauses
@@ -169,7 +147,6 @@ def query_huggingface(model_id, token, text, country=""):
         response = requests.post(API_URL, headers=headers, json=payload, timeout=120)
         return response
     except Exception as e:
-        print(f"Error querying HuggingFace: {e}")
         return None
 
 # ------------------------------------------------------------
