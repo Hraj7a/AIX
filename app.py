@@ -184,7 +184,8 @@ def main():
                 text, num_pages = extract_text_from_file(uploaded_file)
                 st.session_state.analysis_result = text[:2000]  # (your analysis logic here)
                 st.session_state.mode = "chat"
-                st.experimental_rerun()
+                st.rerun()
+
 
     # --------------------------------------------------
     # PAGE 2: CHAT PAGE
@@ -205,7 +206,8 @@ def main():
 
         if back_btn:
             st.session_state.mode = "analyze"
-            st.experimental_rerun()
+            st.rerun()
+
 
         if send_btn and user_question:
             st.session_state.messages.append({"role": "user", "content": user_question})
@@ -217,7 +219,8 @@ def main():
 
             response = get_chatgpt_response(context, model="gpt-4o-mini")
             st.session_state.messages.append({"role": "assistant", "content": response})
-            st.experimental_rerun()
+            st.rerun()
+
 
 
 if __name__ == "__main__":
